@@ -417,4 +417,47 @@ describe('HR Vacation Request Subsystem API Tests', () => {
       });
     });
   });
+
+  describe('Multi-Regional logging & IAP purge tests', () => {
+    test('Logs correctly intercept GCLB requests and extract client IPs, and do not produce IAP logs', async () => {
+      const payload = {
+        employee_id: 'emp_101',
+        start_date: '2026-08-10',
+        end_date: '2026-08-14',
+        reason: 'Logging verification test'
+      };
+
+      // 1. Test x-forwarded-for header with a list of IPs
+      await request(app)
+        .post('/api/requests')
+        .set('x-forwarded-for', '203.0.113.195, 198.51.100.1')
+        .send(payload)
+        .expect(201);
+
+      let state = await request(app).get('/api/state').expect(200);
+      let gclbLogs = state.body.logs.filter(l => l.type === 'gclb');
+      let iapLogs = state.body.logs.filter(l => l.type === 'iap');
+
+      // Verify no IAP logs exist
+      expect(iapLogs).toHaveLength(0);
+
+      // Verify GCLB logs exist and parse first IP in x-forwarded-for list
+      expect(gclbLogs.length).toBeGreaterThanOrEqual(2);
+      expect(gclbLogs[0].message).toContain('GCLB: Forwarded authenticated session for user: alice.vance@retail.corp');
+      expect(gclbLogs[1].message).toContain('GCLB: Intercepted POST request to /api/requests. Client IP: 203.0.113.195. Region: us-central1.');
+
+      // 2. Test fallback to req.socket.remoteAddress and loopback cleaning (Supertest default local IP)
+      await request(app)
+        .post('/api/requests')
+        .send(payload)
+        .expect(201);
+
+      state = await request(app).get('/api/state').expect(200);
+      gclbLogs = state.body.logs.filter(l => l.type === 'gclb');
+      
+      // Loopback IP like ::ffff:127.0.0.1 or ::1 from local supertest should be mapped to 127.0.0.1
+      const logWithIP = gclbLogs.find(l => l.message.includes('Client IP:'));
+      expect(logWithIP.message).toContain('Client IP: 127.0.0.1');
+    });
+  });
 });

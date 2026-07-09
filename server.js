@@ -1,7 +1,70 @@
 const express = require('express');
 const path = require('path');
+const http = require('http');
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+let activeRegion = 'us-central1';
+
+function fetchServerRegion() {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const safeResolve = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    const options = {
+      hostname: 'metadata.google.internal',
+      path: '/computeMetadata/v1/instance/region',
+      method: 'GET',
+      headers: {
+        'Metadata-Flavor': 'Google'
+      },
+      timeout: 1000
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          const trimmed = data.trim();
+          const parts = trimmed.split('/');
+          const region = parts[parts.length - 1];
+          if (region) {
+            activeRegion = region;
+            console.log(`GCP Metadata Server resolved region: ${activeRegion}`);
+          }
+        } else {
+          console.log(`Local Dev Mode: Metadata Server returned status ${res.statusCode}. Falling back to default region: ${activeRegion}`);
+        }
+        safeResolve();
+      });
+    });
+
+    req.on('error', (err) => {
+      console.log(`Local Dev Mode: Socket error or metadata server unreachable. Falling back to default region: ${activeRegion}`);
+      safeResolve();
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      console.log(`Local Dev Mode: Metadata Server request timed out. Falling back to default region: ${activeRegion}`);
+      safeResolve();
+    });
+
+    req.end();
+  });
+}
+
+// Trigger region fetch at boot-time
+fetchServerRegion();
+
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -114,12 +177,25 @@ function resetDatabase() {
 // Perform initial boot DB reset
 resetDatabase();
 
-// Helper to log GCLB and IAP verification on incoming API requests
-function logGCLBAndIAP(req, email) {
-  logDBAction('gclb', `GCLB: Intercepted ${req.method} request to ${req.path}. Client IP: 198.51.100.42. Region: us-central1.`);
-  logDBAction('iap', `IAP: Extracting X-Goog-IAP-JWT-Assertion header...`);
-  logDBAction('iap', `IAP: Cryptographic signature verified against Google public keys (https://www.gstatic.com/iap/verify/public_key)`);
-  logDBAction('iap', `IAP: Authenticated Identity: ${email}. Access GRANTED.`);
+// Helper to extract true client IP
+function getClientIP(req) {
+  let ip = req.headers['x-forwarded-for'];
+  if (ip) {
+    ip = ip.split(',')[0].trim();
+  } else {
+    ip = req.socket.remoteAddress;
+  }
+  if (ip === '::1' || ip === '::ffff:127.0.0.1') {
+    ip = '127.0.0.1';
+  }
+  return ip;
+}
+
+// Helper to log GCLB verification on incoming API requests
+function logGCLBRequest(req, email) {
+  const clientIP = getClientIP(req);
+  logDBAction('gclb', `GCLB: Intercepted ${req.method} request to ${req.path}. Client IP: ${clientIP}. Region: ${activeRegion}.`);
+  logDBAction('gclb', `GCLB: Forwarded authenticated session for user: ${email}.`);
 }
 
 app.use((req, res, next) => {
@@ -134,7 +210,7 @@ app.use((req, res, next) => {
     } else {
       email = 'student@gcp-lab.internal';
     }
-    logGCLBAndIAP(req, email);
+    logGCLBRequest(req, email);
   }
   next();
 });

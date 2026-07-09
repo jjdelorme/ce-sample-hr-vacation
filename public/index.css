@@ -644,10 +644,7 @@ tr:last-child td {
   color: hsl(200, 100%, 70%);
 }
 
-.log-entry.log-iap {
-  border-color: hsl(45, 100%, 50%);
-  color: hsl(45, 100%, 70%);
-}
+
 
 .log-time {
   color: var(--text-muted);
