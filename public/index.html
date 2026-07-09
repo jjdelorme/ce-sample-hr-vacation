@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GCP HR Subsystem - Classroom Vacation Simulator</title>
-  <meta name="description" content="An interactive classroom simulation of a Google Cloud Platform vacation HR request subsystem, showing Cloud Run, Cloud SQL, Firestore, and Private VPC connections in action.">
+  <meta name="description" content="An interactive classroom simulation of a Google Cloud Platform vacation HR request subsystem, showing Cloud Run, AlloyDB Resilient Cluster, and Private VPC connections in action.">
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
@@ -153,10 +153,6 @@
                     <stop offset="0%" stop-color="hsl(200, 100%, 40%)" />
                     <stop offset="100%" stop-color="hsl(215, 95%, 55%)" />
                   </linearGradient>
-                  <linearGradient id="iapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="hsl(38, 95%, 45%)" />
-                    <stop offset="100%" stop-color="hsl(48, 100%, 55%)" />
-                  </linearGradient>
                 </defs>
 
                 <!-- Private VPC boundary box -->
@@ -166,16 +162,12 @@
                 <!-- Interconnect / Communication Pathways -->
                 <!-- Browser to GCLB -->
                 <path id="path-browser-gclb" d="M 60 55 L 195 55" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
-                <!-- GCLB to IAP -->
-                <path id="path-gclb-iap" d="M 195 55 L 345 55" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
-                <!-- IAP to Frontend -->
-                <path id="path-iap-fe" d="M 345 55 L 495 55" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
+                <!-- GCLB to Frontend -->
+                <path id="path-gclb-fe" d="M 195 55 L 495 55" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
                 <!-- Frontend to Backend -->
                 <path id="path-fe-be" d="M 495 55 Q 430 180 300 180" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
-                <!-- Backend to SQL -->
-                <path id="path-be-sql" d="M 300 180 Q 300 300 150 300" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
-                <!-- Backend to Firestore -->
-                <path id="path-be-fs" d="M 300 180 Q 300 300 450 300" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
+                <!-- Backend to AlloyDB Cluster -->
+                <path id="path-be-db" d="M 300 180 L 300 300" fill="none" stroke="hsl(217, 32%, 18%)" stroke-width="2" />
 
                 <!-- 1. Node: User Browser (External) -->
                 <g class="svg-node" transform="translate(60, 55)" id="node-browser">
@@ -189,13 +181,6 @@
                   <rect x="-50" y="-20" width="100" height="40" rx="6" fill="url(#gclbGrad)" stroke="hsl(200, 100%, 50%)" stroke-width="1.5" />
                   <text x="0" y="2" fill="white" font-size="10" font-weight="700" text-anchor="middle">GCLB</text>
                   <text x="0" y="13" fill="hsla(0, 0%, 100%, 0.9)" font-size="7.5" font-family="var(--font-sans)" text-anchor="middle">Global Balancer</text>
-                </g>
-
-                <!-- 3. Node: Identity-Aware Proxy (IAP) -->
-                <g class="svg-node" transform="translate(345, 55)" id="node-iap">
-                  <rect x="-45" y="-20" width="90" height="40" rx="6" fill="url(#iapGrad)" stroke="hsl(45, 100%, 50%)" stroke-width="1.5" />
-                  <text x="0" y="2" fill="white" font-size="10" font-weight="700" text-anchor="middle">IAP Proxy</text>
-                  <text x="0" y="13" fill="hsla(0, 0%, 100%, 0.9)" font-size="7.5" font-family="var(--font-sans)" text-anchor="middle">Identity Gate</text>
                 </g>
 
                 <!-- 4. Node: Frontend Service (Cloud Run - Ingress Locked) -->
@@ -213,27 +198,18 @@
                   <text x="0" y="15" fill="hsla(0, 0%, 100%, 0.8)" font-size="8" font-family="var(--font-mono)" text-anchor="middle">Rules Engine (BE)</text>
                 </g>
 
-                <!-- 6. Node: Cloud SQL Database -->
-                <g class="svg-node" transform="translate(150, 300)" id="node-sql">
-                  <rect x="-60" y="-20" width="120" height="40" rx="6" fill="var(--bg-input)" stroke="var(--border-color)" stroke-width="1" />
-                  <text x="0" y="4" fill="var(--text-primary)" font-size="11" font-weight="600" text-anchor="middle">Relational (SQL)</text>
-                  <text x="0" y="15" fill="var(--primary)" font-size="8" text-anchor="middle">Cloud SQL</text>
-                </g>
-
-                <!-- 7. Node: Firestore NoSQL -->
-                <g class="svg-node" transform="translate(450, 300)" id="node-fs">
-                  <rect x="-60" y="-20" width="120" height="40" rx="6" fill="var(--bg-input)" stroke="var(--border-color)" stroke-width="1" />
-                  <text x="0" y="4" fill="var(--text-primary)" font-size="11" font-weight="600" text-anchor="middle">NoSQL (Docs)</text>
-                  <text x="0" y="15" fill="var(--warning)" font-size="8" text-anchor="middle">Firestore</text>
+                <!-- Node: AlloyDB Resilient Cluster -->
+                <g class="svg-node" transform="translate(300, 300)" id="node-db">
+                  <rect x="-70" y="-20" width="140" height="40" rx="6" fill="var(--bg-input)" stroke="var(--primary)" stroke-width="1.5" />
+                  <text x="0" y="4" fill="var(--text-primary)" font-size="11" font-weight="600" text-anchor="middle">AlloyDB Cluster</text>
+                  <text x="0" y="15" fill="var(--primary)" font-size="8" text-anchor="middle">Active Primary (us-central1)</text>
                 </g>
 
                 <!-- Animated Packets -->
                 <circle id="packet-browser-gclb-c" class="packet" />
-                <circle id="packet-gclb-iap-c" class="packet" />
-                <circle id="packet-iap-fe-c" class="packet" />
+                <circle id="packet-gclb-fe-c" class="packet" />
                 <circle id="packet-fe-be-c" class="packet" />
-                <circle id="packet-be-sql-c" class="packet" />
-                <circle id="packet-be-fs-c" class="packet" />
+                <circle id="packet-be-db-c" class="packet" />
               </svg>
             </div>
           </div>
@@ -292,25 +268,15 @@
           </h2>
           
           <div class="db-tabs">
-            <button class="db-tab-btn active" id="db-tab-sql">Cloud SQL (Relational Tables)</button>
-            <button class="db-tab-btn" id="db-tab-fs">Firestore NoSQL Documents</button>
+            <button class="db-tab-btn active" id="db-tab-sql">AlloyDB Relational Output</button>
           </div>
 
           <div id="db-sql-pane">
             <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.85rem;">
-              Tables: <code style="color: var(--primary);">employees</code>, <code style="color: var(--primary);">accrual_balances</code>, <code style="color: var(--primary);">departments</code>
+              Tables: <code style="color: var(--primary);">employees</code>, <code style="color: var(--primary);">accrual_balances</code>, <code style="color: var(--primary);">departments</code>, <code style="color: var(--primary);">workflows</code>, <code style="color: var(--primary);">notifications</code>
             </div>
             <div class="db-console" id="sql-console-view">
               <!-- Render SQL data dynamically -->
-            </div>
-          </div>
-
-          <div id="db-fs-pane" style="display: none;">
-            <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.85rem;">
-              Collections: <code style="color: var(--warning);">/workflows/{requestId}</code>, <code style="color: var(--warning);">/notifications/{notificationId}</code>
-            </div>
-            <div class="db-console" id="fs-console-view">
-              <!-- Render JSON Document hierarchies dynamically -->
             </div>
           </div>
         </div>
@@ -334,23 +300,23 @@
               <span class="lab-badge lab-easy">GCP ARCHITECT</span>
               <span style="font-size: 0.75rem; color: var(--text-muted);">Duration: 20 mins</span>
             </div>
-            <h3 class="lab-title">Challenge 1: Design Multi-Region Relational Failover</h3>
+            <h3 class="lab-title">Challenge 1: Scale Reads Locally with AlloyDB Read Pool</h3>
             <p class="lab-desc">
-              The current database (Cloud SQL) runs as a standalone, single-region instance in <code>us-central1</code> with no replication. If the entire US-Central datacenter encounters a catastrophic outage, the HR portal is dead. Upgrade your architecture by configuring high availability (HA) and cross-region replica configurations in Terraform.
+              The initial AlloyDB deployment starts with a single primary instance inside <code>us-central1</code> to minimize dev costs. As user traffic scales up across international subsidiaries, upgrade your primary cluster by adding a stateless, high-performance Read Pool instance in the primary region using Terraform. This enables shared-storage local read scaling with zero data copy latency.
             </p>
             <div class="form-group">
               <label>Review target IaC architecture upgrade template</label>
-              <pre class="lab-code"><code>resource "google_sql_database_instance" "replica" {
-  name                 = "hr-sql-replica-europe"
-  region               = "europe-west1"
-  database_version     = "POSTGRES_15"
-  master_instance_name = google_sql_database_instance.primary.name
+              <pre class="lab-code"><code>resource "google_alloydb_instance" "read_pool" {
+  cluster       = google_alloydb_cluster.primary.name
+  instance_id   = "hr-vacation-read-pool"
+  instance_type = "READ_POOL"
 
-  settings {
-    tier = "db-f1-micro"
-    backup_configuration {
-      binary_log_enabled = true
-    }
+  read_pool_config {
+    node_count = 1
+  }
+
+  machine_config {
+    cpu_count = 2
   }
 }</code></pre>
             </div>
@@ -364,7 +330,7 @@
             </div>
             <h3 class="lab-title">Challenge 2: Multi-Region Load Balancing & Anycast Routing</h3>
             <p class="lab-desc">
-              By default, the application is deployed as a secure single-region service with a Global HTTPS Load Balancer (GCLB) and Identity-Aware Proxy (IAP) in <code>us-central1</code>. To reduce network latency for European users, upgrade the baseline GCLB configuration by adding a second regional Cloud Run frontend in <code>europe-west1</code>, declaring a European Serverless Network Endpoint Group (NEG), and registering it as an active-active backend.
+              By default, the application is deployed as a secure single-region service with a Global HTTPS Load Balancer (GCLB) in <code>us-central1</code>. To reduce network latency for European users, upgrade the baseline GCLB configuration by adding a second regional Cloud Run app service in <code>europe-west1</code>, declaring a European Serverless Network Endpoint Group (NEG), and registering it as an active-active backend.
             </p>
             <pre class="lab-code"><code># Add a second regional NEG for European users
 resource "google_compute_region_network_endpoint_group" "serverless_neg_europe" {
@@ -372,7 +338,7 @@ resource "google_compute_region_network_endpoint_group" "serverless_neg_europe" 
   network_endpoint_type = "SERVERLESS"
   region                = "europe-west1"
   cloud_run {
-    service = "hr-vacation-frontend-europe"
+    service = "hr-vacation-app-europe"
   }
 }</code></pre>
           </div>
@@ -383,35 +349,28 @@ resource "google_compute_region_network_endpoint_group" "serverless_neg_europe" 
               <span class="lab-badge lab-hard">DEVOPS ENGINEER</span>
               <span style="font-size: 0.75rem; color: var(--text-muted);">Duration: 45 mins</span>
             </div>
-            <h3 class="lab-title">Challenge 3: Active-Active Workflow Synced Firestore</h3>
+            <h3 class="lab-title">Challenge 3: AlloyDB Disaster Recovery & Regional Failover</h3>
             <p class="lab-desc">
-              Firestore has multi-region options that run on an active-active model (replicating records inside US or Europe dual-regions). Explore changing the Firestore database resource from <code>nam5</code> (US Multi-region) to <code>eur3</code> (Europe Multi-region) inside your Terraform module and document how replication lag impacts live locking rules.
+              AlloyDB utilizes continuous storage-level log streaming to replicate transactions to secondary regional clusters with typical latency under 1 second. In this lab, simulate a catastrophic regional failure of <code>us-central1</code>. Follow the Disaster Recovery Runbook to promote the secondary cluster <code>europe-west1</code> to standalone primary, then update Cloud DNS records so running backends automatically reroute database queries without code modification or redeployments.
             </p>
-          </div>
+            
+            <div class="form-group">
+              <label>DR Promotion Command Snippet</label>
+              <pre class="lab-code"><code># 1. Promote secondary cluster to primary read-write
+gcloud alloydb clusters promote-secondary hr-vacation-cluster-secondary \
+    --region=europe-west1
 
-          <!-- LAB 4 -->
-          <div class="glass-card lab-card" style="border-left-color: hsl(45, 100%, 50%);">
-            <div class="lab-meta">
-              <span class="lab-badge" style="background: hsl(45, 100%, 15%); color: hsl(45, 100%, 60%);">SECURITY ENGINEER</span>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">Duration: 25 mins</span>
+# 2. Update DNS zone endpoints inside VPC
+gcloud dns record-sets transaction start --zone=hr-vacation-private-zone
+gcloud dns record-sets transaction remove --zone=hr-vacation-private-zone \
+    --name="write-db.hr-vacation.internal." --ttl=60 --type=A "[PRIMARY_OLD_IP]"
+gcloud dns record-sets transaction add --zone=hr-vacation-private-zone \
+    --name="write-db.hr-vacation.internal." --ttl=60 --type=A "[EUROPE_NEW_IP]"
+gcloud dns record-sets transaction execute --zone=hr-vacation-private-zone</code></pre>
             </div>
-            <h3 class="lab-title">Challenge 4: Decipher and Validate IAP JWT Header</h3>
-            <p class="lab-desc">
-              Identity-Aware Proxy secures your ingress but how does your app prevent spoofing if someone accesses the local subnet? You MUST verify the <code>X-Goog-IAP-JWT-Assertion</code> header cryptographically in Node.js. Use Google's public certificates endpoint to verify the JWT signature.
-            </p>
-            <pre class="lab-code"><code>// Node.js IAP JWT Verification snippet
-const {OAuth2Client} = require('google-auth-library');
-const oAuth2Client = new OAuth2Client();
-
-async function verifyIAPToken(iapToken, audience) {
-  const ticket = await oAuth2Client.getIapPubKey(iapToken);
-  const key = ticket.pubkey;
-  const payload = await oAuth2Client.verifySignedJwtWithKey(
-    iapToken, key, audience, ['https://cloud.google.com/iap']
-  );
-  return payload;
-}</code></pre>
           </div>
+
+
 
 
         </div>

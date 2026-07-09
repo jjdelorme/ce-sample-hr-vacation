@@ -634,14 +634,9 @@ tr:last-child td {
   color: hsl(199, 89%, 65%);
 }
 
-.log-entry.log-sql {
+.log-entry.log-sql, .log-entry.log-firestore {
   border-color: var(--primary);
   color: hsl(263, 90%, 75%);
-}
-
-.log-entry.log-firestore {
-  border-color: var(--warning);
-  color: hsl(38, 92%, 65%);
 }
 
 .log-entry.log-gclb {
@@ -649,10 +644,7 @@ tr:last-child td {
   color: hsl(200, 100%, 70%);
 }
 
-.log-entry.log-iap {
-  border-color: hsl(45, 100%, 50%);
-  color: hsl(45, 100%, 70%);
-}
+
 
 .log-time {
   color: var(--text-muted);

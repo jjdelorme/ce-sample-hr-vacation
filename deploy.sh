@@ -1,72 +1,109 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
+# Ensure local workspace binaries are in the path (e.g. locally downloaded Terraform)
+export PATH="$PATH:$(pwd)/.bin"
+
+# Exit immediately if any command exits with a non-zero status
 set -e
 
-# Define deployment targets
-PROJECT_ID="our-metric-501215-n6"
-REGION="us-central1"
+
+# Setup clean log styling
+BOLD='\033[1;32m'
+NC='\033[0m' # No Color
+INFO='\033[1;34m'
+WARN='\033[1;33m'
+
+echo -e "${BOLD}===================================================================${NC}"
+echo -e "${BOLD}   GCP Project Bootstrap & Consolidated Cloud Run Deployment        ${NC}"
+echo -e "${BOLD}===================================================================${NC}"
+
+# Check for required parameters
+if [ "$#" -lt 2 ]; then
+  echo -e "${WARN}Usage: $0 <PROJECT_ID> <BILLING_ACCOUNT_ID> [REGION]${NC}"
+  echo ""
+  echo "Arguments:"
+  echo "  PROJECT_ID          The unique ID of the new GCP project to create (e.g. hr-vacation-lab-123)"
+  echo "  BILLING_ACCOUNT_ID  Your billing account ID to link the new project (e.g. 012345-6789AB-CDEF01)"
+  echo "  REGION              (Optional) Deployment region. Defaults to us-central1"
+  echo ""
+  exit 1
+fi
+
+PROJECT_ID="$1"
+BILLING_ACCOUNT_ID="$2"
+REGION="${3:-us-central1}"
 REPO_NAME="ce-sample-hr-vacation-repo"
-IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/app:latest"
 
-echo "=========================================================="
-echo " Starting GCP HR Subsystem Classroom Application Deployment "
-echo "=========================================================="
-echo "Project ID:  $PROJECT_ID"
-echo "Region:      $REGION"
-echo "Repository:  $REPO_NAME"
-echo "=========================================================="
+echo -e "${INFO}[1/7] Initializing GCP Configuration...${NC}"
+# Check if user is logged into gcloud
+if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q "@"; then
+  echo "Error: You do not appear to be logged in to gcloud. Please run 'gcloud auth login' first."
+  exit 1
+fi
 
-# 1. Enforce GCP Project configuration
-echo "Setting active gcloud project context to $PROJECT_ID..."
+# Create project if it doesn't exist
+echo "Checking if project $PROJECT_ID exists..."
+if gcloud projects describe "$PROJECT_ID" &>/dev/null; then
+  echo "Project $PROJECT_ID already exists. Using existing project."
+else
+  echo "Creating new GCP project: $PROJECT_ID..."
+  gcloud projects create "$PROJECT_ID" --name="AlloyDB HR Vacation Lab"
+fi
+
+# Link project to billing
+echo "Linking project $PROJECT_ID to billing account $BILLING_ACCOUNT_ID..."
+gcloud beta billing projects link "$PROJECT_ID" --billing-account="$BILLING_ACCOUNT_ID"
+
+# Set current project context
+echo "Setting gcloud project context to $PROJECT_ID..."
 gcloud config set project "$PROJECT_ID"
 
-# 2. Enable Required APIs
-echo "Enabling Google Cloud Service APIs (this might take a moment)..."
+echo -e "${INFO}[2/7] Enabling Required Google APIs (this can take up to 2-3 minutes)...${NC}"
 gcloud services enable \
+  compute.googleapis.com \
+  servicenetworking.googleapis.com \
+  vpcaccess.googleapis.com \
+  alloydb.googleapis.com \
+  dns.googleapis.com \
   run.googleapis.com \
-  cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
-  iap.googleapis.com
+  cloudbuild.googleapis.com
 
-# 3. Create Artifact Registry if not exists
-echo "Checking if Artifact Registry repository exists..."
+echo -e "${INFO}[3/7] Creating Artifact Registry Repository...${NC}"
 if gcloud artifacts repositories describe "$REPO_NAME" --location="$REGION" &>/dev/null; then
   echo "Repository $REPO_NAME already exists in region $REGION."
 else
-  echo "Repository $REPO_NAME not found. Creating a new Docker registry..."
   gcloud artifacts repositories create "$REPO_NAME" \
     --repository-format=docker \
     --location="$REGION" \
     --description="Classroom HR Vacation Application Registry"
 fi
 
-# 4. Build Container Image using Cloud Build
-echo "Submitting application source to Cloud Build..."
-gcloud builds submit --tag "$IMAGE_TAG" .
+echo -e "${INFO}[4/7] Submitting Monolithic App Image Build to Google Cloud Build...${NC}"
+gcloud builds submit --tag "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/app:latest" .
 
-# 5. Deploy to Cloud Run (Ingress Restricted to Internal and Load Balancing)
-echo "Deploying the containerized application to Cloud Run with Restricted Ingress..."
-gcloud run deploy ce-sample-hr-vacation \
-  --image "$IMAGE_TAG" \
-  --platform managed \
-  --region "$REGION" \
-  --ingress internal-and-cloud-load-balancing \
-  --allow-unauthenticated
+echo -e "${INFO}[5/7] Generating Terraform tfvars File...${NC}"
+cat <<EOF > terraform/terraform.tfvars
+project_id = "$PROJECT_ID"
+region     = "$REGION"
+zone       = "${REGION}-a"
+EOF
+echo "Variables written to terraform/terraform.tfvars"
 
+echo -e "${INFO}[6/7] Initializing and Running Terraform...${NC}"
+cd terraform
+terraform init
+terraform apply -auto-approve
+cd ..
+
+echo -e "${BOLD}===================================================================${NC}"
+echo -e "${BOLD} 🎉 Project Bootstrap & AlloyDB Deployment Completed Successfully! ${NC}"
+echo -e "${BOLD}===================================================================${NC}"
+echo "Project ID:        $PROJECT_ID"
+echo "Region:            $REGION"
 echo ""
-echo "=========================================================="
-echo " 🎉 Deployment and Security Configuration Complete!"
-echo "=========================================================="
-echo "Cloud Run Ingress Status: [INTERNAL & LOAD BALANCING ONLY]"
-echo "This service cannot be accessed directly via its public .run.app URL anymore."
-echo ""
-echo "👉 NEXT STEPS FOR SECURITY HANDS-ON LAB:"
-echo "1. Go to the Cloud Console -> Network Services -> Load Balancing."
-echo "2. Create/Inspect the Global External HTTP(S) Load Balancer."
-echo "3. Go to Security -> Identity-Aware Proxy."
-echo "4. Under 'HTTPS Resources' find your load balancer backend service."
-echo "5. Toggle the IAP switch to 'Enabled' and add your students' accounts"
-echo "   with the 'IAP-secured Web App User' role."
-echo "=========================================================="
-
+echo "👉 NEXT STEPS FOR STUDENTS:"
+echo "1. Retrieve your Global Load Balancer IP address from the Terraform outputs or the GCP Console."
+echo "2. Access the Load Balancer IP over HTTPS (using the self-signed certificate)."
+echo "3. Complete the Lab Challenges listed in the portal to explore AlloyDB failovers and read scaling!"
+echo "==================================================================="

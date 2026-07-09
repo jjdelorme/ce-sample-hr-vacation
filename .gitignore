@@ -1,0 +1,7 @@
+node_modules/
+launchpad-starter/
+.bin/
+terraform/terraform.tfvars
+.terraform/
+*.tfstate*
+

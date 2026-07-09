@@ -19,19 +19,4 @@
 data "google_compute_default_service_account" "default" {
 }
 
-###############################
-###### 1) MEMBER BINDINGS #####
-###############################
-
-# GCS Identity
-resource "google_service_account_iam_binding" "sa_gcs_object_write" {
-  service_account_id = data.google_compute_default_service_account.default.name
-  role               = "roles/storage.objectViewer"
-  members = [
-    "serviceAccount:${data.google_compute_default_service_account.default.email}",
-  ]
-  depends_on = [
-    resource.google_storage_bucket.gcs-cloud-build,
-  
-  ]
-}
+# Redundant IAM binding removed. Service account storage admin permissions are managed via bootstrap CLI.

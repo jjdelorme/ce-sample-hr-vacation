@@ -45,11 +45,8 @@ const terminalStream = document.getElementById('terminal-stream');
 const logCounter = document.getElementById('log-counter');
 
 const dbTabSql = document.getElementById('db-tab-sql');
-const dbTabFs = document.getElementById('db-tab-fs');
 const dbSqlPane = document.getElementById('db-sql-pane');
-const dbFsPane = document.getElementById('db-fs-pane');
 const sqlConsoleView = document.getElementById('sql-console-view');
-const fsConsoleView = document.getElementById('fs-console-view');
 
 const notifCenter = document.getElementById('notif-center');
 const notifBadge = document.getElementById('notif-badge');
@@ -73,7 +70,6 @@ function setupEventListeners() {
 
   // Database Inspector Tabs
   dbTabSql.addEventListener('click', () => switchDbTab('sql'));
-  dbTabFs.addEventListener('click', () => switchDbTab('fs'));
 
   // Role Swap Listener
   selectEmployee.addEventListener('change', (e) => {
@@ -117,19 +113,9 @@ function switchTab(target) {
 }
 
 function switchDbTab(target) {
-  dbTabSql.classList.remove('active');
-  dbTabFs.classList.remove('active');
-  dbSqlPane.style.display = 'none';
-  dbFsPane.style.display = 'none';
-
-  activeDbTab = target;
-  if (target === 'sql') {
-    dbTabSql.classList.add('active');
-    dbSqlPane.style.display = 'block';
-  } else {
-    dbTabFs.classList.add('active');
-    dbFsPane.style.display = 'block';
-  }
+  activeDbTab = 'sql';
+  dbTabSql.classList.add('active');
+  dbSqlPane.style.display = 'block';
   renderDBInspectors();
 }
 
@@ -208,7 +194,7 @@ function renderWorkflows() {
   tableWorkflowsBody.innerHTML = '';
   
   if (state.workflows.length === 0) {
-    tableWorkflowsBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No time-off requests are active in the Firestore state database.</td></tr>`;
+    tableWorkflowsBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No time-off requests are active in the AlloyDB database.</td></tr>`;
     return;
   }
 
@@ -319,10 +305,9 @@ async function handleRequestSubmit(e) {
   };
 
   try {
-    // 1. Trigger SVG Packet Animation through security gateway: Browser -> GCLB -> IAP -> Frontend -> Backend
+    // 1. Trigger SVG Packet Animation through security gateway: Browser -> GCLB -> Frontend -> Backend
     await animatePacket('browser', 'gclb');
-    await animatePacket('gclb', 'iap');
-    await animatePacket('iap', 'fe');
+    await animatePacket('gclb', 'fe');
     await animatePacket('fe', 'be');
 
     const res = await fetch('/api/requests', {
@@ -339,10 +324,7 @@ async function handleRequestSubmit(e) {
     }
 
     // 2. Trigger downstream DB pipeline animation
-    await Promise.all([
-      animatePacket('be', 'sql'),
-      animatePacket('be', 'fs')
-    ]);
+    await animatePacket('be', 'db');
 
     // Success actions
     showToast('success', `Success: Vacation request ${data.requestId} has been submitted!`);
@@ -361,8 +343,7 @@ async function handleWorkflowAction(requestId, action) {
   try {
     // FE -> BE security gateway animation
     await animatePacket('browser', 'gclb');
-    await animatePacket('gclb', 'iap');
-    await animatePacket('iap', 'fe');
+    await animatePacket('gclb', 'fe');
     await animatePacket('fe', 'be');
 
     const res = await fetch(`/api/requests/${requestId}/action`, {
@@ -381,10 +362,7 @@ async function handleWorkflowAction(requestId, action) {
     }
 
     // DB updates trigger
-    await Promise.all([
-      animatePacket('be', 'sql'),
-      animatePacket('be', 'fs')
-    ]);
+    await animatePacket('be', 'db');
 
     showToast('success', `Workflow committed: ${requestId} status updated to ${action.toUpperCase()}.`);
     await fetchState();
@@ -535,72 +513,49 @@ function datesOverlap(start1, end1, start2, end2) {
 // -------------------------------------------------------------
 
 function renderDBInspectors() {
-  if (activeDbTab === 'sql') {
-    let html = `<b style="color:var(--text-secondary)">-- Cloud SQL Relational Console Output</b>\n\n`;
-    
-    // TABLE: employees
-    html += `<span style="color:var(--text-muted)">SELECT * FROM employees;</span>\n`;
-    html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n`;
-    html += `| ID      | Name              | Sector     | Country | Dept ID            | Email                 |\n`;
-    html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n`;
-    state.employees.forEach(e => {
-      html += `| ${e.id.padEnd(7)} | ${e.name.padEnd(17)} | ${e.sector.padEnd(10)} | ${e.country.padEnd(7)} | ${e.department_id.padEnd(18)} | ${e.email.padEnd(21)} |\n`;
-    });
-    html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n\n`;
+  let html = `<b style="color:var(--text-secondary)">-- AlloyDB Relational Console Output</b>\n\n`;
+  
+  // TABLE: employees
+  html += `<span style="color:var(--text-muted)">SELECT * FROM employees;</span>\n`;
+  html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n`;
+  html += `| ID      | Name              | Sector     | Country | Dept ID            | Email                 |\n`;
+  html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n`;
+  state.employees.forEach(e => {
+    html += `| ${e.id.padEnd(7)} | ${e.name.padEnd(17)} | ${e.sector.padEnd(10)} | ${e.country.padEnd(7)} | ${e.department_id.padEnd(18)} | ${e.email.padEnd(21)} |\n`;
+  });
+  html += `+---------+-------------------+------------+---------+--------------------+-----------------------+\n\n`;
 
-    // TABLE: accrual_balances
-    html += `<span style="color:var(--text-muted)">SELECT * FROM accrual_balances;</span>\n`;
-    html += `+-------------+------+-----------+--------------+-----------+----------------+\n`;
-    html += `| Employee ID | Year | Base Days | Accrued Days | Used Days | Rollover Days  |\n`;
-    html += `+-------------+------+-----------+--------------+-----------+----------------+\n`;
-    state.accrualBalances.forEach(b => {
-      html += `| ${b.employee_id.padEnd(11)} | ${b.year} | ${b.base_days.toString().padEnd(9)} | ${b.accrued_days.toString().padEnd(12)} | ${b.used_days.toString().padEnd(9)} | ${b.rollover_days.toString().padEnd(14)} |\n`;
-    });
-    html += `+-------------+------+-----------+--------------+-----------+----------------+\n`;
+  // TABLE: accrual_balances
+  html += `<span style="color:var(--text-muted)">SELECT * FROM accrual_balances;</span>\n`;
+  html += `+-------------+------+-----------+--------------+-----------+----------------+\n`;
+  html += `| Employee ID | Year | Base Days | Accrued Days | Used Days | Rollover Days  |\n`;
+  html += `+-------------+------+-----------+--------------+-----------+----------------+\n`;
+  state.accrualBalances.forEach(b => {
+    html += `| ${b.employee_id.padEnd(11)} | ${b.year} | ${b.base_days.toString().padEnd(9)} | ${b.accrued_days.toString().padEnd(12)} | ${b.used_days.toString().padEnd(9)} | ${b.rollover_days.toString().padEnd(14)} |\n`;
+  });
+  html += `+-------------+------+-----------+--------------+-----------+----------------+\n\n`;
 
-    sqlConsoleView.innerHTML = html;
-  } else {
-    let html = `<b style="color:var(--text-secondary)">// Firestore Document collections (/workflows)</b>\n\n`;
-    
-    state.workflows.forEach(w => {
-      html += `<span style="color: var(--warning);">document workflows/${w.id}</span> {\n`;
-      Object.keys(w).forEach(key => {
-        const val = w[key];
-        let valFormatted = val;
-        if (typeof val === 'string') {
-          valFormatted = `<span class="json-val-str">"${val}"</span>`;
-        } else if (typeof val === 'number') {
-          valFormatted = `<span class="json-val-num">${val}</span>`;
-        } else if (typeof val === 'boolean') {
-          valFormatted = `<span class="json-val-bool">${val}</span>`;
-        } else if (Array.isArray(val)) {
-          valFormatted = `[${val.map(v => `<span class="json-val-str">"${v}"</span>`).join(', ')}]`;
-        }
-        html += `  <span class="json-key">"${key}"</span>: ${valFormatted},\n`;
-      });
-      html += `}\n\n`;
-    });
+  // TABLE: workflows
+  html += `<span style="color:var(--text-muted)">SELECT * FROM workflows;</span>\n`;
+  html += `+-------------+--------------------+----------------+--------------+------------------+-----------------+\n`;
+  html += `| Request ID  | Employee Name      | Sector         | Date Range   | Days Requested   | Status          |\n`;
+  html += `+-------------+--------------------+----------------+--------------+------------------+-----------------+\n`;
+  state.workflows.forEach(w => {
+    html += `| ${w.id.padEnd(11)} | ${w.employee_name.padEnd(18)} | ${w.sector.padEnd(14)} | ${w.start_date.padEnd(12)} | ${w.days_requested.toString().padEnd(16)} | ${w.status.padEnd(15)} |\n`;
+  });
+  html += `+-------------+--------------------+----------------+--------------+------------------+-----------------+\n\n`;
 
-    html += `<b style="color:var(--text-secondary)">// Firestore Document collections (/notifications)</b>\n\n`;
-    state.notifications.forEach(n => {
-      html += `<span style="color: var(--warning);">document notifications/${n.id}</span> {\n`;
-      Object.keys(n).forEach(key => {
-        const val = n[key];
-        let valFormatted = val;
-        if (typeof val === 'string') {
-          valFormatted = `<span class="json-val-str">"${val}"</span>`;
-        } else if (typeof val === 'number') {
-          valFormatted = `<span class="json-val-num">${val}</span>`;
-        } else if (typeof val === 'boolean') {
-          valFormatted = `<span class="json-val-bool">${val}</span>`;
-        }
-        html += `  <span class="json-key">"${key}"</span>: ${valFormatted},\n`;
-      });
-      html += `}\n\n`;
-    });
+  // TABLE: notifications
+  html += `<span style="color:var(--text-muted)">SELECT * FROM notifications;</span>\n`;
+  html += `+-------------+-------------+-------------------------------------------------------------+-------+\n`;
+  html += `| Notif ID    | User ID     | Message                                                     | Read  |\n`;
+  html += `+-------------+-------------+-------------------------------------------------------------+-------+\n`;
+  state.notifications.forEach(n => {
+    html += `| ${n.id.padEnd(11)} | ${n.user_id.padEnd(11)} | ${n.message.substring(0, 58).padEnd(59)} | ${n.read.toString().padEnd(5)} |\n`;
+  });
+  html += `+-------------+-------------+-------------------------------------------------------------+-------+\n`;
 
-    fsConsoleView.innerHTML = html;
-  }
+  sqlConsoleView.innerHTML = html;
 }
 
 // -------------------------------------------------------------

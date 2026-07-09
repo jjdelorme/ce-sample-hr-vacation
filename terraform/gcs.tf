@@ -14,7 +14,7 @@
 
 resource "google_storage_bucket" "gcs-cloud-build" {
   name                        = "${var.project_id}_cloudbuild"
-  location                    = var.region
+  location                    = "US"
   force_destroy               = false
   uniform_bucket_level_access = true
 }

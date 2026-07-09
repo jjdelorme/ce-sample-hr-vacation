@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -38,7 +42,7 @@ resource "google_vpc_access_connector" "vpc_connector" {
   network       = google_compute_network.vpc_network.name
 }
 
-# Private Service Networking (For Private Cloud SQL communication)
+# Private Service Networking (For Private AlloyDB communication)
 resource "google_compute_global_address" "private_ip_alloc" {
   name          = "private-ip-alloc-sql"
   purpose       = "VPC_PEERING"
@@ -54,49 +58,82 @@ resource "google_service_networking_connection" "private_vpc_connection" {
 }
 
 # -------------------------------------------------------------
-# 2. PRIMARY RELATION RELATIONAL STORE (Cloud SQL Postgres)
+# 2. RANDOM PASSWORD FOR ALLOYDB CLUSTER
 # -------------------------------------------------------------
 
-resource "google_sql_database_instance" "postgres" {
-  name             = "hr-vacation-sql-db"
-  region           = var.region
-  database_version = "POSTGRES_15"
+resource "random_password" "alloydb_password" {
+  length  = 16
+  special = false
+}
+
+# -------------------------------------------------------------
+# 3. PRIMARY ALLOYDB CLUSTER & INSTANCE (us-central1)
+# -------------------------------------------------------------
+
+resource "google_alloydb_cluster" "primary" {
+  cluster_id = "hr-vacation-cluster-primary"
+  location   = var.region # us-central1
+  
+  network_config {
+    network = google_compute_network.vpc_network.id
+  }
+
+  initial_user {
+    password = random_password.alloydb_password.result
+  }
+}
+
+# Primary read-write instance (2-vCPU node)
+resource "google_alloydb_instance" "primary_instance" {
+  cluster       = google_alloydb_cluster.primary.name
+  instance_id   = "hr-vacation-primary-instance"
+  instance_type = "PRIMARY"
+
+  machine_config {
+    cpu_count = 2
+  }
 
   depends_on = [google_service_networking_connection.private_vpc_connection]
+}
 
-  settings {
-    tier = "db-f1-micro" # Lightweight development tier
-    
-    ip_configuration {
-      ipv4_enabled    = false # Isolate fully from public internet
-      private_network = google_compute_network.vpc_network.id
-    }
+# -------------------------------------------------------------
+# 4. ZERO-CODE-CHANGE DNS ENDPOINTS (Cloud DNS Private Zone)
+# -------------------------------------------------------------
 
-    # Backup configurations required for replication / Point-in-time recoveries
-    backup_configuration {
-      enabled    = true
-      start_time = "02:00"
+resource "google_dns_managed_zone" "private_zone" {
+  name        = "hr-vacation-private-zone"
+  dns_name    = "hr-vacation.internal."
+  description = "Internal Private Zone for DB abstraction and seamless failovers"
+  
+  visibility = "private"
+  
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.vpc_network.id
     }
   }
 }
 
-resource "google_sql_database" "hr_database" {
-  name     = "hr_vacation"
-  instance = google_sql_database_instance.postgres.name
+# Map DB_WRITE_HOST: write-db.hr-vacation.internal -> Primary AlloyDB Private IP
+resource "google_dns_record_set" "write_dns" {
+  name         = "write-db.hr-vacation.internal."
+  managed_zone = google_dns_managed_zone.private_zone.name
+  type         = "A"
+  ttl          = 60
+  rrdatas      = [google_alloydb_instance.primary_instance.ip_address]
+}
+
+# Map DB_READ_HOST: read-db.hr-vacation.internal -> Primary AlloyDB Private IP (resolving to local read pools)
+resource "google_dns_record_set" "read_dns" {
+  name         = "read-db.hr-vacation.internal."
+  managed_zone = google_dns_managed_zone.private_zone.name
+  type         = "A"
+  ttl          = 60
+  rrdatas      = [google_alloydb_instance.primary_instance.ip_address]
 }
 
 # -------------------------------------------------------------
-# 3. ASYNCHRONOUS WORKFLOW DOCUMENT STORE (Firestore)
-# -------------------------------------------------------------
-
-resource "google_firestore_database" "firestore" {
-  name        = "(default)"
-  location_id = "nam5" # US Multi-region
-  type        = "FIRESTORE_NATIVE"
-}
-
-# -------------------------------------------------------------
-# 4. ARTIFACT REGISTRY & COMPUTE LAYER (Cloud Run Services)
+# 5. ARTIFACT REGISTRY & COMPUTE LAYER (Cloud Run Services)
 # -------------------------------------------------------------
 
 resource "google_artifact_registry_repository" "app_repo" {
@@ -104,24 +141,33 @@ resource "google_artifact_registry_repository" "app_repo" {
   format        = "DOCKER"
 }
 
-# Cloud Run (Backend Service)
-resource "google_cloud_run_v2_service" "backend_service" {
-  name     = "hr-vacation-backend"
+# Cloud Run (Monolithic Application Service)
+resource "google_cloud_run_v2_service" "app_service" {
+  name     = "hr-vacation-app"
   location = var.region
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   template {
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.app_repo.repository_id}/backend:latest"
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.app_repo.repository_id}/app:latest"
       ports {
         container_port = 8080
       }
       env {
-        name  = "DB_HOST"
-        value = google_sql_database_instance.postgres.private_ip_address
+        name  = "DB_WRITE_HOST"
+        value = "write-db.hr-vacation.internal"
+      }
+      env {
+        name  = "DB_READ_HOST"
+        value = "read-db.hr-vacation.internal"
+      }
+      env {
+        name  = "DB_PASS"
+        value = random_password.alloydb_password.result
       }
     }
     
-    # Enforce routing outbound backend traffic through Serverless VPC Connector
+    # Enforce routing outbound traffic through Serverless VPC Connector
     vpc_access {
       connector = google_vpc_access_connector.vpc_connector.id
       egress    = "ALL_TRAFFIC"
@@ -129,49 +175,29 @@ resource "google_cloud_run_v2_service" "backend_service" {
   }
 }
 
-# Cloud Run (Frontend Service)
-resource "google_cloud_run_v2_service" "frontend_service" {
-  name     = "hr-vacation-frontend"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
-
-  template {
-    containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.app_repo.repository_id}/frontend:latest"
-      ports {
-        container_port = 8080
-      }
-      env {
-        name  = "BACKEND_API_URL"
-        value = google_cloud_run_v2_service.backend_service.uri
-      }
-    }
-  }
-}
-
 # Allow IAM invocation for GCLB / Authenticated proxy requests
-resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
-  name     = google_cloud_run_v2_service.frontend_service.name
-  location = google_cloud_run_v2_service.frontend_service.location
+resource "google_cloud_run_v2_service_iam_member" "app_public" {
+  name     = google_cloud_run_v2_service.app_service.name
+  location = google_cloud_run_v2_service.app_service.location
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
 # -------------------------------------------------------------
-# 5. GLOBAL EXTERNAL LOAD BALANCER (GCLB) WITH IAP
+# 6. GLOBAL EXTERNAL LOAD BALANCER (GCLB)
 # -------------------------------------------------------------
 
-# Serverless NEG (Network Endpoint Group) targeting the Cloud Run Frontend
+# Serverless NEG (Network Endpoint Group) targeting the Cloud Run Monolith
 resource "google_compute_region_network_endpoint_group" "serverless_neg" {
   name                  = "hr-vacation-neg"
   network_endpoint_type = "SERVERLESS"
   region                = var.region
   cloud_run {
-    service = google_cloud_run_v2_service.frontend_service.name
+    service = google_cloud_run_v2_service.app_service.name
   }
 }
 
-# Backend Service for GCLB with IAP enabled
+# Backend Service for GCLB with IAP disabled
 resource "google_compute_backend_service" "backend_service" {
   name                  = "hr-vacation-backend-service"
   protocol              = "HTTP"
@@ -180,11 +206,6 @@ resource "google_compute_backend_service" "backend_service" {
 
   backend {
     group = google_compute_region_network_endpoint_group.serverless_neg.id
-  }
-
-  iap {
-    oauth2_client_id     = var.iap_client_id
-    oauth2_client_secret = var.iap_client_secret
   }
 }
 
@@ -254,12 +275,6 @@ resource "google_compute_global_forwarding_rule" "https_forwarding_rule" {
   target                = google_compute_target_https_proxy.https_proxy.id
 }
 
-# Grant default Identity-Aware Proxy (IAP) access to the student
-resource "google_iap_web_backend_service_iam_member" "student_access" {
-  project             = var.project_id
-  web_backend_service = google_compute_backend_service.backend_service.name
-  role                = "roles/iap.httpsResourceAccessor"
-  member              = "user:${var.student_email}"
-}
+
 
 
